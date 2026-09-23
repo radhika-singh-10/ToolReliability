@@ -1,0 +1,46 @@
+scenarios:
+  - id: damaged_refund
+    name: Refund a damaged delivery
+    prompt: Refund order ORD-100 for ana@example.test because it arrived damaged, then email confirmation.
+    initial_state: {refund_eligible: true}
+    expected_calls:
+      - {tool: customer.lookup, arguments: {email: ana@example.test}}
+      - {tool: order.get, arguments: {order_id: ORD-100}}
+      - {tool: refund.check_eligibility, arguments: {order_id: ORD-100}}
+      - {tool: refund.create, arguments: {order_id: ORD-100, reason: damaged}}
+      - {tool: email.send, arguments: {to: ana@example.test, subject: Refund confirmation}}
+    forbidden_tools: [replacement.create]
+    expected_state: {refund_created: true, email_sent: true}
+  - id: delayed_tracking
+    name: Track a delayed shipment
+    prompt: Track order ORD-200 for bob@example.test.
+    initial_state: {shipping_status: delayed}
+    expected_calls:
+      - {tool: customer.lookup, arguments: {email: bob@example.test}}
+      - {tool: order.get, arguments: {order_id: ORD-200}}
+      - {tool: shipping.track, arguments: {order_id: ORD-200}}
+    forbidden_tools: [refund.create, replacement.create]
+  - id: damaged_replacement
+    name: Replace an in-stock damaged item
+    prompt: Replace SKU-RED-42 from order ORD-300 and notify priya@example.test.
+    initial_state: {inventory_available: true}
+    expected_calls:
+      - {tool: order.get, arguments: {order_id: ORD-300}}
+      - {tool: inventory.check, arguments: {sku: SKU-RED-42}}
+      - {tool: replacement.create, arguments: {order_id: ORD-300, sku: SKU-RED-42}}
+      - {tool: email.send, arguments: {to: priya@example.test, subject: Replacement confirmation}}
+    forbidden_tools: [refund.create]
+    expected_state: {replacement_created: true, email_sent: true}
+  - id: refund_timeout_recovery
+    name: Recover from refund eligibility timeout
+    prompt: Refund eligible order ORD-400 and email lee@example.test.
+    initial_state: {refund_eligible: true}
+    fault: {tool: refund.check_eligibility, attempt: 1, type: timeout}
+    expected_calls:
+      - {tool: refund.check_eligibility, arguments: {order_id: ORD-400}}
+      - {tool: refund.create, arguments: {order_id: ORD-400, reason: requested}}
+      - {tool: email.send, arguments: {to: lee@example.test, subject: Refund confirmation}}
+    forbidden_tools: [replacement.create]
+    expected_state: {refund_created: true, email_sent: true}
+    max_tool_calls: 4
+

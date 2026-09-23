@@ -1,0 +1,16 @@
+name: Agent regression gate
+on: [push, pull_request]
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e '.[dev]'
+      - run: pytest -q
+      - name: Run quality gate
+        run: toolreliability --minimum-pass-rate 0.85 --output evaluation-report.json
+      - uses: actions/upload-artifact@v4
+        with: {name: evaluation-report, path: evaluation-report.json}
+
