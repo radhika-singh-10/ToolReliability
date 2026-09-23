@@ -12,6 +12,7 @@ class ExpectedCall(BaseModel):
 class Scenario(BaseModel):
     id: str
     name: str
+    domain: str = "commerce"
     prompt: str
     expected_calls: list[ExpectedCall]
     forbidden_tools: list[str] = Field(default_factory=list)
@@ -19,6 +20,7 @@ class Scenario(BaseModel):
     expected_state: dict[str, Any] = Field(default_factory=dict)
     fault: dict[str, Any] | None = None
     max_tool_calls: int = 8
+    tags: list[str] = Field(default_factory=list)
 
 
 class ToolCall(BaseModel):
@@ -27,6 +29,8 @@ class ToolCall(BaseModel):
     success: bool = True
     error: str | None = None
     latency_ms: float = 0
+    attempt: int = 1
+    response: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentResult(BaseModel):
@@ -65,4 +69,3 @@ class RunSummary(BaseModel):
     p95_latency_ms: float
     cost_per_success: float
     results: list[CaseResult]
-

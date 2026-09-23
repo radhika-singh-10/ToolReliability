@@ -6,4 +6,4 @@ node_modules/
 dist/
 evaluation-report.json
 .env
-
+data/
