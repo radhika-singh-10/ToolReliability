@@ -52,6 +52,21 @@ sequenceDiagram
     Evaluator-->>Client: Pass rate, failures, latency, cost
 ```
 
+### Console prototype (sample data)
+
+The separate console prototype presents fictional tenant and evaluation records. Its filters and drill-downs illustrate the intended experience; they are not connected to this repository's API or persisted run history.
+
+```mermaid
+flowchart TD
+    S["Sample evaluation records"] --> F["Tenant · use case · time filters"]
+    F --> O["Overview: pass rate, P95 latency, tool reliability"]
+    F --> R["Evaluation runs: gate status and scores"]
+    F --> G["Regression history: run versus baseline"]
+    F --> M["Metrics: trends and failure categories"]
+    R --> D["Run detail: expected versus observed and tool trace"]
+    G --> D
+```
+
 ## Implemented features
 
 ### Orchestration and execution
