@@ -4,27 +4,70 @@
 
 ToolReliability catches behavioral regressions caused by model, prompt, workflow, or tool changes. It executes domain-specific agent workflows, records every tool attempt, scores the resulting trace, persists run history, and exposes results through an API, CLI, dashboard, and CI quality gate.
 
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB) ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688) ![React](https://img.shields.io/badge/React-dashboard-61DAFB) ![CI](https://img.shields.io/badge/CI-agent_regression_gate-2088FF) ![License](https://img.shields.io/badge/license-MIT-green)
+For the MongoDB hackathon, the flagship demo is **SubShield AI**, an autonomous subscription and privacy watchdog that detects subscription dark patterns, duplicate billing, price hikes, promotional-pricing expiry, and unsafe AI-to-human delegation before personal data is shared externally.
+
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB) ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688) ![React](https://img.shields.io/badge/React-dashboard-61DAFB) ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas%20ready-47A248) ![CI](https://img.shields.io/badge/CI-agent_regression_gate-2088FF) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Why it exists
 
 Traditional unit tests verify deterministic functions. Tool-using agents are harder to validate: a harmless-looking prompt or model update can select the wrong tool, omit an argument, execute steps in the wrong order, retry a side effect twice, or claim success after a failed operation.
 
-ToolReliability treats the complete execution trace as the testable artifact. It evaluates what the agent did—not only what it said—and turns those results into a release decision.
+ToolReliability treats the complete execution trace as the testable artifact. It evaluates what the agent did, not only what it said, and turns those results into a release decision.
+
+## MongoDB hackathon demo: SubShield AI
+
+Subscription dark patterns are still a real consumer problem: confusing recurring billing, hidden price increases, duplicate subscriptions, promotional rates that quietly expire, and cancellation flows that push users into high-friction support channels.
+
+SubShield AI reframes ToolReliability as a consumer agent that can safely watch bills and take action:
+
+- Detect a Canva monthly price increase from `$12` to `$16`.
+- Detect duplicate subscriptions across email receipts and transactions.
+- Flag internet promotional pricing before the bill jumps.
+- Recommend `keep`, `downgrade`, `negotiate`, or `cancel`.
+- Before delegating cancellation or negotiation, scan the payload for sensitive data.
+- Redact unnecessary fields such as home address, medical reason, or bank details.
+- Produce an auditable trace so regressions are caught before the agent acts.
+
+### MongoDB-native architecture
+
+```mermaid
+flowchart TD
+    A["Email and bank events"] --> B["Atlas operational store"]
+    B --> C["Atlas Search"]
+    B --> D["Vector Search"]
+    B --> E["Change Streams"]
+    C --> F["Subscription watchdog agent"]
+    D --> F
+    E --> F
+    F --> G["Trace evaluator"]
+    G --> H["Action cards and privacy gate"]
+    G --> I["Regression history"]
+```
+
+| MongoDB capability | Hackathon use |
+|---|---|
+| Atlas document store | User subscriptions, transactions, receipts, consent logs, and agent traces |
+| Atlas Search | Search receipts, renewal emails, cancellation terms, and vendor policies |
+| Vector Search | Match similar subscriptions, vendor aliases, cancellation patterns, and prior user actions |
+| Change Streams | Trigger an evaluation when a new receipt, transaction, or renewal notice arrives |
+| Time series collections | Track monthly price changes and renewal cadence over time |
+| Aggregation pipelines | Compute spend, duplicate billing, price deltas, and upcoming renewal risk |
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A["CLI · React · CI"] --> B["FastAPI control plane"]
+    A["CLI / React / CI"] --> B["FastAPI control plane"]
     B --> C["Evaluation harness"]
     C --> D["Orchestrator agent"]
     C --> E["Bounded worker pool"]
     D --> F["Tool registry"]
-    F --> G["Data analytics environment"]
-    F --> H["Developer workflow environment"]
+    F --> G["Data analytics tools"]
+    F --> H["Developer workflow tools"]
+    F --> S["Subscription watchdog tools"]
     G --> I["Trace evaluator"]
     H --> I
+    S --> I
     I --> J["Run history"]
     I --> K["Regression gate"]
 ```
@@ -52,21 +95,6 @@ sequenceDiagram
     Evaluator-->>Client: Pass rate, failures, latency, cost
 ```
 
-### Console prototype (sample data)
-
-The separate console prototype presents fictional tenant and evaluation records. Its filters and drill-downs illustrate the intended experience; they are not connected to this repository's API or persisted run history.
-
-```mermaid
-flowchart TD
-    S["Sample evaluation records"] --> F["Tenant · use case · time filters"]
-    F --> O["Overview: pass rate, P95 latency, tool reliability"]
-    F --> R["Evaluation runs: gate status and scores"]
-    F --> G["Regression history: run versus baseline"]
-    F --> M["Metrics: trends and failure categories"]
-    R --> D["Run detail: expected versus observed and tool trace"]
-    G --> D
-```
-
 ## Implemented features
 
 ### Orchestration and execution
@@ -85,9 +113,10 @@ flowchart TD
 - Central registry containing tool ownership, descriptions, required arguments, and side-effect metadata
 - Required-argument validation before execution
 - Isolated deterministic environments for repeatable evaluation
-- Side-effect protection against duplicate issue, branch, and refund operations
+- Side-effect protection against duplicate issue, branch, refund, and unsafe delegation operations
 - Fault injection for timeout and rate-limit recovery tests
 - Read-only SQL enforcement in the analytics environment
+- Privacy redaction gate for subscription cancellation and negotiation delegation
 
 ### Trace and evaluation
 
@@ -104,17 +133,30 @@ Every tool attempt records the tool name, arguments, attempt number, response, e
 
 Critical failures, including forbidden tool calls, override the aggregate score.
 
-### Persistence and interfaces
-
-- Durable SQLite run history behind a replaceable `RunStore` boundary
-- Run summaries, domain metadata, traces, latency, cost, and scores
-- FastAPI endpoints for suite discovery, execution, history, and individual runs
-- CLI execution for local development and CI
-- React dashboard for domain selection and scenario-level results
-- Docker Compose deployment with a persistent data volume
-- GitHub Actions regression gate and evaluation report artifact
-
 ## Evaluation packs
+
+### Subscription watchdog
+
+The subscription pack is the MongoDB hackathon track. It verifies that an agent can move from messy consumer evidence to a safe, auditable recommendation.
+
+```mermaid
+flowchart LR
+    A["Search receipts"] --> B["Find recurring charge"]
+    B --> C["Detect risk"]
+    C --> D["Recommend action"]
+    D --> E["Privacy gate"]
+```
+
+Covered behaviors:
+
+- Hidden price increase detection
+- Recurring transaction lookup
+- Duplicate subscription detection support in the tool registry
+- Promotional-pricing expiry support in the tool registry
+- Keep, downgrade, negotiate, and cancel recommendation cards
+- Privacy scan before cancellation or negotiation delegation
+- Redaction before any external handoff
+- Forbidden raw delegation checks
 
 ### Data analytics
 
@@ -127,16 +169,7 @@ flowchart LR
     C --> D["Create chart or export"]
 ```
 
-Covered behaviors:
-
-- Table and column discovery
-- Read-only query enforcement
-- Aggregation and filtering queries
-- Result ID propagation between tools
-- Result validation before downstream actions
-- Bar-chart generation and CSV export
-- Warehouse-timeout retry and recovery
-- Forbidden chart/export operations
+Covered behaviors include table discovery, read-only query enforcement, result validation, chart generation, CSV export, and warehouse-timeout recovery.
 
 ### Developer workflow
 
@@ -149,17 +182,7 @@ flowchart LR
     C --> D["Verify CI"]
 ```
 
-Covered behaviors:
-
-- Repository and default-branch discovery
-- Code search before issue creation
-- Existing-issue search and duplicate prevention
-- Branch creation from an explicit base
-- CI status verification
-- Rate-limit retry and recovery
-- Forbidden issue or branch operations
-
-Evaluation packs are YAML-defined, so additional domains can reuse the same orchestration and evaluation runtime.
+Covered behaviors include repository discovery, code search, duplicate issue prevention, branch creation, CI verification, and rate-limit recovery.
 
 ## API
 
@@ -168,6 +191,7 @@ Evaluation packs are YAML-defined, so additional domains can reuse the same orch
 | `GET` | `/health` | Service health |
 | `GET` | `/api/tools` | Registered tools and metadata |
 | `GET` | `/api/suites` | Available domain suites |
+| `POST` | `/api/harness/runs?domain=subscription_watchdog` | Execute the MongoDB hackathon subscription suite |
 | `POST` | `/api/harness/runs?domain=data_analytics` | Execute the analytics suite |
 | `POST` | `/api/harness/runs?domain=developer_workflow` | Execute the developer suite |
 | `GET` | `/api/harness/runs` | List persisted runs |
@@ -184,7 +208,13 @@ pip install -e '.[dev]'
 pytest -q
 ```
 
-Run either domain:
+Run the MongoDB hackathon demo domain:
+
+```bash
+toolreliability --domain subscription_watchdog --minimum-pass-rate 0.90
+```
+
+Run the other domains:
 
 ```bash
 toolreliability --domain data_analytics
@@ -208,6 +238,15 @@ Open `http://localhost:5173`, or launch the stack with:
 ```bash
 docker compose up --build
 ```
+
+## Demo script
+
+1. Start with the consumer pain: recurring subscriptions continue charging because renewal emails, bank transactions, and cancellation terms are scattered.
+2. Run `toolreliability --domain subscription_watchdog`.
+3. Show the Canva scenario: the agent searches receipts, finds the recurring charge, compares old and new prices, and recommends downgrade.
+4. Show the privacy scenario: the agent plans a gym cancellation, scans the delegation payload, redacts home address and medical reason, and only prepares a safe vendor request.
+5. Explain how MongoDB Atlas stores receipts, transactions, consent logs, traces, and baseline runs, while Atlas Search and Vector Search retrieve relevant evidence.
+6. Close with the regression angle: if a future model skips redaction or sends a raw request, the quality gate fails before the action reaches the vendor.
 
 ## Add another agent
 
@@ -237,6 +276,7 @@ toolreliability/
 │   ├── storage.py        # Persistent run history
 │   └── models.py         # Typed contracts
 ├── scenarios/
+│   ├── subscription_watchdog.yaml
 │   ├── data_analytics.yaml
 │   └── developer_workflow.yaml
 ├── frontend/             # React dashboard
@@ -251,18 +291,20 @@ GitHub Actions runs tests and the CLI quality gate on pushes and pull requests. 
 
 ```bash
 toolreliability \
-  --domain data_analytics \
+  --domain subscription_watchdog \
   --minimum-pass-rate 0.90 \
   --output evaluation-report.json
 ```
 
 ## Production roadmap
 
+- MongoDB Atlas persistence for subscriptions, traces, and consent logs
+- Atlas Search over receipts, policies, and cancellation terms
+- Vector Search for duplicate subscription matching and vendor-pattern retrieval
+- Change Streams for transaction and renewal-event triggers
 - MCP and OpenAPI automatic tool discovery
-- PostgreSQL multi-tenant storage and migrations
-- Redis-backed distributed workers and cancellation
-- Production trace replay with sensitive-data redaction
 - Baseline/candidate comparisons and slice-level regression policies
+- Production trace replay with sensitive-data redaction
 - OpenTelemetry traces, Prometheus metrics, and Grafana dashboards
 - Hosted-model, Bedrock, vLLM, and LangGraph adapters
 - Kubernetes deployment and provider-aware concurrency controls
