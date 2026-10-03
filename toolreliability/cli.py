@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--agent", choices=["reference", "regression"], default="reference")
     parser.add_argument("--output", default="evaluation-report.json")
     parser.add_argument("--minimum-pass-rate", type=float, default=0.85)
-    parser.add_argument("--domain", choices=["data_analytics", "developer_workflow"])
+    parser.add_argument("--domain", choices=["data_analytics", "developer_workflow", "subscription_watchdog"])
     args = parser.parse_args()
     if args.domain:
         harness = EvaluationHarness(HarnessPolicy(minimum_pass_rate=args.minimum_pass_rate), RunStore())
