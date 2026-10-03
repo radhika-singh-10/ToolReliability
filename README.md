@@ -1,205 +1,114 @@
-# ToolReliability
+# ToolReliability: SubShield AI
 
-**A trace-driven orchestration and evaluation harness for tool-using AI agents.**
+**SubShield AI is a MongoDB-powered subscription and privacy watchdog built on top of a trace-driven agent evaluation harness.**
 
-ToolReliability catches behavioral regressions caused by model, prompt, workflow, or tool changes. It executes domain-specific agent workflows, records every tool attempt, scores the resulting trace, persists run history, and exposes results through an API, CLI, dashboard, and CI quality gate.
-
-For the MongoDB hackathon, the flagship demo is **SubShield AI**, an autonomous subscription and privacy watchdog that detects subscription dark patterns, duplicate billing, price hikes, promotional-pricing expiry, and unsafe AI-to-human delegation before personal data is shared externally.
+It detects subscription dark patterns such as hidden price increases, duplicate billing, promotional pricing expiry, and risky cancellation delegation. Then it recommends whether the user should **keep, downgrade, negotiate, or cancel**, while making sure unnecessary personal data is redacted before any AI-to-human or AI-to-business handoff.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB) ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688) ![React](https://img.shields.io/badge/React-dashboard-61DAFB) ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas%20ready-47A248) ![CI](https://img.shields.io/badge/CI-agent_regression_gate-2088FF) ![License](https://img.shields.io/badge/license-MIT-green)
 
-## Why it exists
+## Problem
 
-Traditional unit tests verify deterministic functions. Tool-using agents are harder to validate: a harmless-looking prompt or model update can select the wrong tool, omit an argument, execute steps in the wrong order, retry a side effect twice, or claim success after a failed operation.
+Consumers lose money because subscription evidence is scattered across inboxes, bank transactions, renewal emails, promo terms, and cancellation flows. Even when an AI assistant can help, another problem appears: the agent may delegate tasks to a vendor support team or human concierge and accidentally expose more personal data than necessary.
 
-ToolReliability treats the complete execution trace as the testable artifact. It evaluates what the agent did, not only what it said, and turns those results into a release decision.
+SubShield AI focuses on two practical problems:
 
-## MongoDB hackathon demo: SubShield AI
+- **Subscription dark patterns:** hidden recurring billing, duplicate plans, price hikes, and promotional rates that expire quietly.
+- **Delegation privacy:** before an agent cancels or negotiates externally, it must reveal only the minimum necessary information.
 
-Subscription dark patterns are still a real consumer problem: confusing recurring billing, hidden price increases, duplicate subscriptions, promotional rates that quietly expire, and cancellation flows that push users into high-friction support channels.
+## Solution
 
-SubShield AI reframes ToolReliability as a consumer agent that can safely watch bills and take action:
+SubShield AI runs an agent workflow, records every tool call, and evaluates whether the workflow behaved correctly. It does not only check the final answer; it checks the trace.
 
-- Detect a Canva monthly price increase from `$12` to `$16`.
-- Detect duplicate subscriptions across email receipts and transactions.
-- Flag internet promotional pricing before the bill jumps.
-- Recommend `keep`, `downgrade`, `negotiate`, or `cancel`.
-- Before delegating cancellation or negotiation, scan the payload for sensitive data.
-- Redact unnecessary fields such as home address, medical reason, or bank details.
-- Produce an auditable trace so regressions are caught before the agent acts.
+The demo currently includes two concrete scenarios:
 
-### MongoDB-native architecture
+| Scenario | What the agent must do | Regression caught |
+|---|---|---|
+| Canva price increase | Search receipts, find recurring charge, compare `$12` to `$16`, recommend downgrade | Agent misses hidden price hike or chooses wrong action |
+| Gym cancellation privacy | Plan cancellation, scan payload, redact home address and medical reason, prepare safe vendor request | Agent sends raw personal data externally |
 
-```mermaid
-flowchart TD
-    A["Email and bank events"] --> B["Atlas operational store"]
-    B --> C["Atlas Search"]
-    B --> D["Vector Search"]
-    B --> E["Change Streams"]
-    C --> F["Subscription watchdog agent"]
-    D --> F
-    E --> F
-    F --> G["Trace evaluator"]
-    G --> H["Action cards and privacy gate"]
-    G --> I["Regression history"]
+Run it with:
+
+```bash
+toolreliability --domain subscription_watchdog --minimum-pass-rate 0.90
 ```
 
-| MongoDB capability | Hackathon use |
+Expected result:
+
+```text
+2/2 passed (100.0%); score=1.000
+```
+
+## MongoDB Fit
+
+MongoDB is the right backend because this product needs flexible documents, search, vector retrieval, time-aware billing history, event triggers, and auditable agent traces.
+
+| MongoDB capability | How SubShield AI uses it |
 |---|---|
-| Atlas document store | User subscriptions, transactions, receipts, consent logs, and agent traces |
-| Atlas Search | Search receipts, renewal emails, cancellation terms, and vendor policies |
-| Vector Search | Match similar subscriptions, vendor aliases, cancellation patterns, and prior user actions |
-| Change Streams | Trigger an evaluation when a new receipt, transaction, or renewal notice arrives |
-| Time series collections | Track monthly price changes and renewal cadence over time |
-| Aggregation pipelines | Compute spend, duplicate billing, price deltas, and upcoming renewal risk |
+| Atlas document store | Stores subscriptions, receipts, transactions, consent logs, vendor policies, and agent traces |
+| Atlas Search | Searches receipts, renewal emails, cancellation terms, and vendor policy text |
+| Atlas Vector Search | Finds similar subscriptions, vendor aliases, prior cancellation patterns, and user-specific preferences |
+| Change Streams | Triggers checks when a new receipt, bank charge, or renewal notice arrives |
+| Time series collections | Tracks monthly subscription amount changes and renewal cadence |
+| Aggregation pipelines | Computes price deltas, duplicate subscriptions, spend by vendor, and upcoming renewal risk |
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A["CLI / React / CI"] --> B["FastAPI control plane"]
-    B --> C["Evaluation harness"]
-    C --> D["Orchestrator agent"]
-    C --> E["Bounded worker pool"]
-    D --> F["Tool registry"]
-    F --> G["Data analytics tools"]
-    F --> H["Developer workflow tools"]
-    F --> S["Subscription watchdog tools"]
-    G --> I["Trace evaluator"]
-    H --> I
-    S --> I
-    I --> J["Run history"]
+    A["Receipts and renewal emails"] --> B["MongoDB Atlas"]
+    C["Bank transactions"] --> B
+    D["Vendor policies"] --> B
+    B --> E["Atlas Search"]
+    B --> F["Vector Search"]
+    B --> G["Change Streams"]
+    E --> H["SubShield agent"]
+    F --> H
+    G --> H
+    H --> I["Trace evaluator"]
+    I --> J["Action card"]
     I --> K["Regression gate"]
 ```
 
-### Evaluation lifecycle
+## Agent Flow
 
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant Harness
+    participant User
     participant Agent
-    participant Tool
+    participant MongoDB
+    participant Tools
     participant Evaluator
-    participant Store
-    Client->>Harness: Start domain suite
-    Harness->>Agent: Scenario and available tools
-    loop Planned steps
-        Agent->>Tool: Validated tool call
-        Tool-->>Agent: Result or transient failure
-        Agent->>Tool: Policy-controlled retry
-    end
-    Agent-->>Harness: Final state and trace
-    Harness->>Evaluator: Score behavior
-    Evaluator->>Store: Persist run and case results
-    Evaluator-->>Client: Pass rate, failures, latency, cost
+    User->>Agent: Watch my subscriptions
+    Agent->>MongoDB: Search receipts and billing history
+    Agent->>Tools: Detect price hike or privacy risk
+    Tools-->>Agent: Evidence and state changes
+    Agent->>Evaluator: Submit full tool trace
+    Evaluator-->>User: Pass/fail, reason, recommended action
 ```
 
-## Implemented features
-
-### Orchestration and execution
-
-- Domain-independent `EvaluationHarness`
-- Traceable planner/executor loop through `OrchestratorAgent`
-- Bounded asynchronous concurrency using semaphores
-- Per-case execution timeout
-- Configurable maximum attempts
-- Retry classification for timeouts, rate limits, and connection resets
-- Immediate stop for non-retryable failures
-- Replaceable planner boundary for future model-backed agents
-
-### Tool runtime
-
-- Central registry containing tool ownership, descriptions, required arguments, and side-effect metadata
-- Required-argument validation before execution
-- Isolated deterministic environments for repeatable evaluation
-- Side-effect protection against duplicate issue, branch, refund, and unsafe delegation operations
-- Fault injection for timeout and rate-limit recovery tests
-- Read-only SQL enforcement in the analytics environment
-- Privacy redaction gate for subscription cancellation and negotiation delegation
-
-### Trace and evaluation
-
-Every tool attempt records the tool name, arguments, attempt number, response, error category, success status, and execution latency.
-
-| Metric | What it measures |
-|---|---|
-| Tool-selection F1 | Required tools selected without unnecessary tools |
-| Argument accuracy | Tool inputs match expected values |
-| Sequence score | Successful calls follow the required order |
-| Task completion | Expected environment state is reached |
-| Efficiency | Agent avoids unnecessary calls and retries |
-| Overall score | Weighted release score across all dimensions |
-
-Critical failures, including forbidden tool calls, override the aggregate score.
-
-## Evaluation packs
-
-### Subscription watchdog
-
-The subscription pack is the MongoDB hackathon track. It verifies that an agent can move from messy consumer evidence to a safe, auditable recommendation.
+## Demo Flow
 
 ```mermaid
-flowchart LR
-    A["Search receipts"] --> B["Find recurring charge"]
+flowchart TD
+    A["New receipt or charge"] --> B["Retrieve evidence"]
     B --> C["Detect risk"]
-    C --> D["Recommend action"]
-    D --> E["Privacy gate"]
+    C --> D{"Action needed?"}
+    D -->|No| E["Keep monitoring"]
+    D -->|Yes| F["Recommend keep / downgrade / negotiate / cancel"]
+    F --> G{"External delegation?"}
+    G -->|No| H["Show action card"]
+    G -->|Yes| I["Privacy scan and redaction"]
+    I --> J["Safe request for user approval"]
 ```
 
-Covered behaviors:
+## What The Hackathon Demo Shows
 
-- Hidden price increase detection
-- Recurring transaction lookup
-- Duplicate subscription detection support in the tool registry
-- Promotional-pricing expiry support in the tool registry
-- Keep, downgrade, negotiate, and cancel recommendation cards
-- Privacy scan before cancellation or negotiation delegation
-- Redaction before any external handoff
-- Forbidden raw delegation checks
+1. **Canva price hike:** The agent searches receipt evidence, finds the recurring charge, compares old and new prices, and recommends `downgrade` because the subscription increased by `$4/month`.
+2. **Gym cancellation:** The agent prepares a cancellation request but first scans the payload. It keeps `name`, `email`, and `subscription_id`, while redacting `home_address` and `medical_reason`.
+3. **Regression gate:** If a future model skips the redaction step or calls `delegation.send_raw_request`, the workflow fails before the unsafe action reaches a vendor.
+4. **MongoDB story:** Atlas stores the user memory, receipt corpus, transaction history, consent events, action cards, and trace history. Atlas Search and Vector Search retrieve the evidence that the agent uses to decide.
 
-### Data analytics
-
-The analytics pack verifies that an agent can safely move from a business question to a validated artifact.
-
-```mermaid
-flowchart LR
-    A["Discover schema"] --> B["Execute read-only SQL"]
-    B --> C["Validate result"]
-    C --> D["Create chart or export"]
-```
-
-Covered behaviors include table discovery, read-only query enforcement, result validation, chart generation, CSV export, and warehouse-timeout recovery.
-
-### Developer workflow
-
-The developer pack evaluates multi-step repository operations with controlled side effects.
-
-```mermaid
-flowchart LR
-    A["Inspect repository"] --> B["Search code or issues"]
-    B --> C["Create issue or branch"]
-    C --> D["Verify CI"]
-```
-
-Covered behaviors include repository discovery, code search, duplicate issue prevention, branch creation, CI verification, and rate-limit recovery.
-
-## API
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/health` | Service health |
-| `GET` | `/api/tools` | Registered tools and metadata |
-| `GET` | `/api/suites` | Available domain suites |
-| `POST` | `/api/harness/runs?domain=subscription_watchdog` | Execute the MongoDB hackathon subscription suite |
-| `POST` | `/api/harness/runs?domain=data_analytics` | Execute the analytics suite |
-| `POST` | `/api/harness/runs?domain=developer_workflow` | Execute the developer suite |
-| `GET` | `/api/harness/runs` | List persisted runs |
-| `GET` | `/api/harness/runs/{run_id}` | Retrieve a complete run |
-
-Interactive OpenAPI documentation is available at `http://localhost:8000/docs`.
-
-## Quick start
+## Local Setup
 
 ```bash
 python3 -m venv .venv
@@ -208,24 +117,26 @@ pip install -e '.[dev]'
 pytest -q
 ```
 
-Run the MongoDB hackathon demo domain:
+Run the MongoDB hackathon domain:
 
 ```bash
 toolreliability --domain subscription_watchdog --minimum-pass-rate 0.90
 ```
 
-Run the other domains:
+Run the other evaluation domains:
 
 ```bash
 toolreliability --domain data_analytics
 toolreliability --domain developer_workflow
 ```
 
-Start the API and dashboard:
+Start the API:
 
 ```bash
 uvicorn toolreliability.api:app --reload
 ```
+
+Start the dashboard:
 
 ```bash
 cd frontend
@@ -233,45 +144,33 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`, or launch the stack with:
+Open:
 
-```bash
-docker compose up --build
+```text
+http://localhost:5173
 ```
 
-## Demo script
+## API
 
-1. Start with the consumer pain: recurring subscriptions continue charging because renewal emails, bank transactions, and cancellation terms are scattered.
-2. Run `toolreliability --domain subscription_watchdog`.
-3. Show the Canva scenario: the agent searches receipts, finds the recurring charge, compares old and new prices, and recommends downgrade.
-4. Show the privacy scenario: the agent plans a gym cancellation, scans the delegation payload, redacts home address and medical reason, and only prepares a safe vendor request.
-5. Explain how MongoDB Atlas stores receipts, transactions, consent logs, traces, and baseline runs, while Atlas Search and Vector Search retrieve relevant evidence.
-6. Close with the regression angle: if a future model skips redaction or sends a raw request, the quality gate fails before the action reaches the vendor.
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Service health |
+| `GET` | `/api/tools` | Registered tools and metadata |
+| `GET` | `/api/suites` | Available evaluation domains |
+| `POST` | `/api/harness/runs?domain=subscription_watchdog` | Run the SubShield AI demo suite |
+| `POST` | `/api/harness/runs?domain=data_analytics` | Run data analytics evaluation suite |
+| `POST` | `/api/harness/runs?domain=developer_workflow` | Run developer workflow evaluation suite |
+| `GET` | `/api/harness/runs` | List persisted runs |
+| `GET` | `/api/harness/runs/{run_id}` | Retrieve a complete run |
 
-## Add another agent
-
-The harness is framework-independent. Implement the adapter contract and return a structured trace:
-
-```python
-class MyAgent:
-    name = "my-agent-v2"
-
-    async def run(self, scenario, environment) -> AgentResult:
-        # Invoke LangGraph, MCP, vLLM, Bedrock,
-        # or another hosted agent endpoint.
-        ...
-```
-
-A model-backed planner can replace the reference orchestrator while preserving concurrency control, retries, tool validation, trace evaluation, persistence, and CI thresholds.
-
-## Repository structure
+## Repository Structure
 
 ```text
 toolreliability/
 ├── toolreliability/
 │   ├── api.py            # FastAPI control plane
 │   ├── orchestrator.py   # Agent loop and evaluation harness
-│   ├── domain_tools.py   # Tool registry and environments
+│   ├── domain_tools.py   # Tool registry and domain environments
 │   ├── evaluator.py      # Trace scoring
 │   ├── storage.py        # Persistent run history
 │   └── models.py         # Typed contracts
@@ -285,29 +184,58 @@ toolreliability/
 └── docker-compose.yml
 ```
 
-## CI regression gate
+## Evaluation Metrics
 
-GitHub Actions runs tests and the CLI quality gate on pushes and pull requests. The CLI returns a non-zero exit code when the pass rate falls below the configured threshold and uploads the complete JSON report as a workflow artifact.
+| Metric | What it measures |
+|---|---|
+| Tool-selection F1 | Required tools selected without unnecessary tools |
+| Argument accuracy | Tool inputs match expected values |
+| Sequence score | Successful calls follow the required order |
+| Task completion | Expected environment state is reached |
+| Efficiency | Agent avoids unnecessary calls and retries |
+| Overall score | Weighted release score across all dimensions |
 
-```bash
-toolreliability \
-  --domain subscription_watchdog \
-  --minimum-pass-rate 0.90 \
-  --output evaluation-report.json
-```
+Critical failures, such as unsafe raw delegation, override the aggregate score.
 
-## Production roadmap
+## Hackathon Pitch
 
-- MongoDB Atlas persistence for subscriptions, traces, and consent logs
-- Atlas Search over receipts, policies, and cancellation terms
+**One-liner:**
+
+SubShield AI is a MongoDB-powered bill watchdog that detects subscription dark patterns and prevents privacy leaks when AI agents cancel, downgrade, or negotiate services on a user's behalf.
+
+**Short pitch:**
+
+Subscriptions are intentionally hard to track. Price hikes hide in receipts, promotional pricing expires quietly, duplicate plans pile up, and cancellation flows often push users toward a support channel. SubShield AI connects the user's email and transaction history, stores that evidence in MongoDB Atlas, and uses an agent workflow to detect billing risks and recommend a concrete action: keep, downgrade, negotiate, or cancel.
+
+The second part is privacy. If the agent needs to contact a business or a human concierge, it first scans the payload and redacts unnecessary personal data. For example, a gym cancellation may need a name, email, and subscription ID, but not a home address or medical reason.
+
+What makes this more than a chatbot is the evaluation harness. Every tool call is recorded and scored. If a future model forgets to compare prices, skips redaction, or sends raw personal data externally, the regression gate fails before the action reaches the vendor.
+
+**Why MongoDB:**
+
+MongoDB Atlas is the memory and evidence layer. It stores flexible documents for receipts, transactions, vendor policies, user consent, and agent traces. Atlas Search retrieves exact receipt and policy evidence. Vector Search finds similar subscriptions and prior vendor patterns. Change Streams can trigger new evaluations whenever a new bank charge or renewal email arrives.
+
+## Demo Script For Judges
+
+1. Start with the pain: "People do not lose money because they are careless; they lose money because subscription systems are designed to be hard to monitor."
+2. Show the Canva scenario: receipt plus transaction evidence shows a price increase from `$12` to `$16`.
+3. Show the action card: SubShield recommends `downgrade` and explains the reason.
+4. Show the gym cancellation scenario: the agent prepares cancellation but stops at the privacy gate.
+5. Show redaction: it shares only `name`, `email`, and `subscription_id`; it removes `home_address` and `medical_reason`.
+6. Show the trace score: the evaluator proves the agent used the right tools, in the right order, with the right arguments.
+7. Close with the product value: "This saves money, protects privacy, and gives users a trustworthy agent that can act without becoming reckless."
+
+## Production Roadmap
+
+- MongoDB Atlas persistence for subscriptions, traces, consent logs, and action cards
+- Atlas Search over receipts, policies, vendor terms, and cancellation instructions
 - Vector Search for duplicate subscription matching and vendor-pattern retrieval
 - Change Streams for transaction and renewal-event triggers
-- MCP and OpenAPI automatic tool discovery
+- Real Gmail and bank-data connectors through user-approved integrations
 - Baseline/candidate comparisons and slice-level regression policies
 - Production trace replay with sensitive-data redaction
-- OpenTelemetry traces, Prometheus metrics, and Grafana dashboards
 - Hosted-model, Bedrock, vLLM, and LangGraph adapters
-- Kubernetes deployment and provider-aware concurrency controls
+- OpenTelemetry traces, Prometheus metrics, and dashboard-level monitoring
 
 ## License
 
