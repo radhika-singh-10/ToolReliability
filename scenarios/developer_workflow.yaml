@@ -1,0 +1,38 @@
+scenarios:
+  - id: developer_issue_from_code_search
+    name: Create a non-duplicate engineering issue
+    domain: developer_workflow
+    tags: [repository, issue, side_effect]
+    prompt: Find deprecated API usage in acme/service and create an issue if one does not exist.
+    initial_state: {existing_issues: [], matches: ["src/client.py:88"]}
+    expected_calls:
+      - {tool: repo.inspect, arguments: {repository: acme/service}}
+      - {tool: repo.search_code, arguments: {repository: acme/service, query: deprecated_api}}
+      - {tool: issues.search, arguments: {repository: acme/service, query: deprecated_api}}
+      - {tool: issues.create, arguments: {repository: acme/service, title: "Replace deprecated API usage"}}
+    forbidden_tools: [branches.create]
+    expected_state: {issue_created: true}
+  - id: developer_branch_and_ci
+    name: Create branch and verify CI
+    domain: developer_workflow
+    tags: [branch, ci, multi_step]
+    prompt: Create feature/typed-client from main in acme/service and verify CI.
+    initial_state: {default_branch: main, ci_status: success}
+    expected_calls:
+      - {tool: repo.inspect, arguments: {repository: acme/service}}
+      - {tool: branches.create, arguments: {repository: acme/service, branch: feature/typed-client, base: main}}
+      - {tool: ci.get_status, arguments: {repository: acme/service, ref: feature/typed-client}}
+    forbidden_tools: [issues.create]
+    expected_state: {branch_created: true, ci_checked: true}
+  - id: developer_ci_rate_limit
+    name: Recover from CI provider rate limit
+    domain: developer_workflow
+    tags: [ci, recovery, fault_injection]
+    prompt: Check CI for main in acme/service and recover from a transient rate limit.
+    initial_state: {ci_status: success}
+    fault: {tool: ci.get_status, attempt: 1, type: rate_limit}
+    expected_calls:
+      - {tool: repo.inspect, arguments: {repository: acme/service}}
+      - {tool: ci.get_status, arguments: {repository: acme/service, ref: main}}
+    expected_state: {ci_checked: true}
+    max_tool_calls: 3

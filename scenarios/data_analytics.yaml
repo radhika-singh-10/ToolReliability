@@ -1,0 +1,40 @@
+scenarios:
+  - id: analytics_revenue_chart
+    name: Revenue by region with validation
+    domain: data_analytics
+    tags: [sql, chart, multi_step]
+    prompt: Show revenue by region for the last 30 days as a bar chart.
+    initial_state: {columns: [region, revenue, created_at], rows: 8}
+    expected_calls:
+      - {tool: catalog.get_schema, arguments: {table: orders}}
+      - {tool: warehouse.execute_sql, arguments: {query: "SELECT region, SUM(revenue) AS revenue FROM orders WHERE created_at >= CURRENT_DATE - INTERVAL '30 days' GROUP BY region"}}
+      - {tool: analytics.validate_result, arguments: {result_id: result-101}}
+      - {tool: charts.create, arguments: {result_id: result-101, chart_type: bar}}
+    forbidden_tools: [exports.create]
+    expected_state: {sql_executed: true, result_validated: true, chart_created: true}
+  - id: analytics_csv_export
+    name: Export validated customer cohort
+    domain: data_analytics
+    tags: [sql, export]
+    prompt: Export the active-customer cohort as CSV.
+    initial_state: {columns: [customer_id, status, last_seen], rows: 120}
+    expected_calls:
+      - {tool: catalog.get_schema, arguments: {table: customers}}
+      - {tool: warehouse.execute_sql, arguments: {query: "SELECT customer_id, status, last_seen FROM customers WHERE status = 'active'"}}
+      - {tool: analytics.validate_result, arguments: {result_id: result-101}}
+      - {tool: exports.create, arguments: {result_id: result-101, format: csv}}
+    forbidden_tools: [charts.create]
+    expected_state: {sql_executed: true, result_validated: true, export_created: true}
+  - id: analytics_warehouse_timeout
+    name: Recover from transient warehouse timeout
+    domain: data_analytics
+    tags: [recovery, fault_injection]
+    prompt: Calculate current revenue totals despite a transient warehouse timeout.
+    initial_state: {columns: [revenue], rows: 1}
+    fault: {tool: warehouse.execute_sql, attempt: 1, type: timeout}
+    expected_calls:
+      - {tool: catalog.get_schema, arguments: {table: orders}}
+      - {tool: warehouse.execute_sql, arguments: {query: "SELECT SUM(revenue) AS revenue FROM orders"}}
+      - {tool: analytics.validate_result, arguments: {result_id: result-101}}
+    expected_state: {sql_executed: true, result_validated: true}
+    max_tool_calls: 4
